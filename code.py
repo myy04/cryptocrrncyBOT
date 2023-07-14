@@ -44,7 +44,6 @@ def get_data():
         url = f"https://crypto.com/price/{full_names[i].replace(' ', '-').lower()}"
         links.update({(full_names[i], short_names[i]) : url})
     
-    print(full_names)
 
 def most_simillar(x, dataset):  
     max_score = float(0.00)
@@ -60,7 +59,7 @@ def most_simillar(x, dataset):
 
     return ret 
 
-def find_pair(name, pairs):
+def find_pair(name, pairs = links.keys()):
     for pair in pairs:
         if name == pair[0] or name == pair[1]:
             return pair
@@ -81,29 +80,15 @@ def get_price(name):
     current_time = datetime.now()
     seconds = int(current_time.hour) * 60 * 60 + int(current_time.minute) * 60 + int(current_time.second)
 
+    update_freq = 180 #seconds
+
     if name not in prices.keys():
         prices.update({name: (updated_price(url), seconds)})
     else:
-        if abs(prices[name][1] - seconds) > 2 * 60 * 60:
+        if abs(prices[name][1] - seconds) > update_freq:
             prices.update({name : (updated_price(url), seconds)})
 
     return prices[name][0]
-
-def KZT_USD(url = "https://kase.kz/en/currency/"):
-    page = requests.get(url)
-    print(url, page.status_code)
-
-    soup = BeautifulSoup(page.text, 'html.parser')
-    table = soup.find('table', class_="dataTable sorting-table--false table table-striped js-spot-table").find('tbody').find_all('tr')
-    
-    lst = []
-    for row in table:
-        r = row.text.strip().split()
-        lst.append(r)
-    
-    print(lst)
-
-    return float(lst[7][6].replace(',', '.'))
 
 def currency_format(x, KZT = 0, USD = 0):
     if (USD): 
@@ -111,22 +96,6 @@ def currency_format(x, KZT = 0, USD = 0):
     if (KZT):
         return "₸{:,.2f}".format(float(x))
 
-
-def correct_name(name):
-    name = name.upper()
-
-    short_sim = most_simillar(name, short_names)
-    full_sim = most_simillar(name, full_names)
-
-    print("NAME CORRECTION:")
-    print("SHORT SIMILAR: ", short_sim)
-    print("LONG SIMILLAR: ", full_sim)
-
-    if fuzz.ratio(name, short_sim) > fuzz.ratio(name, full_sim):
-        return find_pair(short_sim, links.keys())[0]
-
-    else:
-        return full_sim
 
 ####BOT####
 
@@ -140,16 +109,19 @@ def welcome(message):
     if message.chat.id not in tracks.keys():
         tracks.update({message.chat.id : []})
 
-    bot.register_next_step_handler(msg, add_link)
+    bot.register_next_step_handler(msg, add_to_list)
 
-def add_link(message):
-    name = message.text
-    print("ADD: INPUT", name)
+def add_to_list(message):
+    name = message.text.upper()
+    print("add_to_list input: ", name)
 
-    name = correct_name(name)
-    print("ADD: CORRECTED", name)
+    name = most_simillar(name, list(full_names + short_names))
+    name = find_pair(name)[0]
+
+    print("add_to_list corrected input:", name)
 
     if name == "ERROR":
+        print("add_to_list: error")
         bot.reply_to(message, "No match")
         return
 
@@ -157,6 +129,7 @@ def add_link(message):
     
     if name not in tracks[user_id]:
         tracks[user_id].append(name)    
+        print(f"add_to_list: {user_id} has added {name} to their list")
 
     bot.reply_to(message, f"{name} has been added to your list")
 
@@ -181,17 +154,21 @@ def show_prices(message):
 @bot.message_handler(commands=['remove'])
 def ask_to_type(message):
     msg = bot.reply_to(message, "Type the name of cryptocurrency that you want to remove from your list")
-    bot.register_next_step_handler(msg, remove_track)
+    bot.register_next_step_handler(msg, remove_from_list)
 
-def remove_track(message):
+def remove_from_list(message):
     user_id = message.chat.id
-    name = message.text
-    name = correct_name(name)
+    name = message.text.upper()
 
-    if user_id in tracks.keys():
+    name = most_simillar(name, list(full_names + short_names))
+    name = find_pair(name)[0]
+
+    if name in tracks[user_id]:
         tracks[user_id].remove(name)
-        bot.reply_to(message, f"{name} has been successfuly removed from your list")
+        bot.reply_to(message, f"{name} has been removed from your list")
+        print(f"remove_from_list: {user_id} has removed {name} from their list")
     else:
-        bot.reply_to(message, "There is no such cryptocurrency in your list")
+        bot.reply_to(message, f"{name} is not in your list")
+        print(f"remove_from_list: {name} is not in {user_id} list")
 
 bot.infinity_polling()
